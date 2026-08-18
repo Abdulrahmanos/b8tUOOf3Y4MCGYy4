@@ -9,7 +9,7 @@ The notebook begins with transparent lexical baselines, progresses to dense and 
 The workflow:
 
 1. Loads and inspects the candidate dataset.
-2. removes duplicate job titles.
+2. Removes duplicate job titles.
 3. Cleans and audits the text.
 4. Converts job titles into numerical representations.
 5. Ranks candidates using cosine similarity.
