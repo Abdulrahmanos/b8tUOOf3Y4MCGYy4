@@ -1,55 +1,168 @@
-# Potential Talent: Candidate Ranking with NLP
+# Potential Talent: Candidate Ranking and Relevance Feedback
 
-An educational natural language processing project that ranks potential candidates by comparing their job titles with a recruiter's target role.
+This repository contains an exploratory natural language processing workflow for ranking candidate profiles against a recruiting query. It addresses the **Potential Talents** project brief through text preprocessing, multiple document-representation methods, cosine-similarity ranking, and a prototype relevance-feedback mechanism based on recruiter stars and rejections.
 
-The notebook begins with transparent lexical baselines, progresses to dense and contextual embeddings, and then demonstrates how recruiter feedback can personalize the ranking.
+The repository demonstrates the modeling logic in a Jupyter notebook. It does **not** contain a deployed recruiter-facing application, production API, persistent feedback database, or a validated probability-of-fit model.
 
-## Project overview
+## Problem definition
 
-The workflow:
+The project brief describes a recruiting workflow with three requirements:
 
-1. Loads and inspects the candidate dataset.
-2. Removes duplicate job titles.
-3. Cleans and audits the text.
-4. Converts job titles into numerical representations.
-5. Ranks candidates using cosine similarity.
-6. Re-ranks candidates when a recruiter stars or rejects profiles.
-7. Compares the different representation methods.
+1. Accept a role-specific search phrase, such as **"aspiring human resources"**.
+2. Rank sourced candidates by their estimated relevance to that phrase.
+3. Treat a starred candidate as an example of the recruiter's preferred profile and re-rank the remaining candidates after each starring action.
 
-## Methods explored
+Candidate sourcing is outside the project scope. The analytical task begins with an existing candidate list.
 
-| Method | Purpose |
+## Evidence from the supplied data
+
+| Observation | Value |
+| --- | ---: |
+| Candidate records | 104 |
+| Unique candidate IDs | 104 |
+| Unique job-title strings | 52 |
+| Duplicate job-title rows | 52 |
+| Available `fit` labels | 0 of 104 |
+
+The dataset contains the following fields:
+
+| Field | Description |
 | --- | --- |
-| Bag of Words | Raw word-count baseline |
-| TF-IDF | Weights distinctive terms more strongly than common terms |
-| Word2Vec | Learns local word-context relationships |
-| GloVe | Learns from global word co-occurrence |
-| FastText | Adds character-level subword information |
-| BERT | Produces contextual token embeddings |
-| SBERT | Produces sentence embeddings designed for semantic similarity |
+| `id` | Unique candidate identifier |
+| `job_title` | Candidate job-title text |
+| `location` | Candidate location |
+| `connection` | LinkedIn-style connection count |
+| `fit` | Intended target score between 0 and 1 |
 
-The notebook uses cosine similarity to compare a query embedding with each candidate embedding:
+Because the `fit` column is entirely empty, the supplied data cannot support supervised training or an evidence-based evaluation of predicted fit probabilities. The notebook therefore treats candidate ranking as a **text-retrieval problem** and uses similarity scores as ranking signals rather than calibrated probabilities.
+
+## Implementation status
+
+| Capability | Status | Evidence in the repository |
+| --- | --- | --- |
+| Load and audit the source data | Implemented | Record counts, column types, and missing values are inspected |
+| Remove duplicate job titles | Implemented | The corpus is reduced from 104 records to 52 distinct title strings |
+| Clean and compare text variants | Implemented | Lowercasing, punctuation handling, token cleaning, and word-loss checks are included |
+| Rank candidates from a query | Implemented in the notebook | Candidate and query vectors are compared with cosine similarity |
+| Compare representation methods | Implemented | Bag of Words, TF-IDF, Word2Vec, GloVe, FastText, BERT, and SBERT are examined |
+| Re-rank after recruiter feedback | Implemented as a notebook prototype | Starred and rejected candidates update the SBERT query representation |
+| Predict a calibrated `fit` probability | Not implemented | No labeled `fit` values are available for training or validation |
+| Recruiter-facing search and review system | Not implemented | No web interface, API, authentication, or deployment is included |
+| Persistent feedback and audit history | Not implemented | Demonstration feedback is held in notebook memory |
+| Validated filtering threshold | Not established | Relevance labels and cross-role evaluation data are required |
+| Bias and fairness evaluation | Not established | The dataset is anonymized and contains no evaluation labels or protected-attribute audit set |
+
+## Analytical workflow
 
 ```text
-cos(q, c) = (q · c) / (||q|| ||c||)
+Recruiter query
+      |
+      v
+Text cleaning and tokenization
+      |
+      v
+Document representation
+(BoW / TF-IDF / embeddings)
+      |
+      v
+Cosine similarity
+      |
+      v
+Initial candidate ranking
+      |
+      v
+Recruiter stars or rejects candidates
+      |
+      v
+Query representation is updated
+      |
+      v
+Candidate list is re-ranked
 ```
 
-## Recruiter feedback
+## Representation methods
 
-A recruiter can star relevant candidates or reject irrelevant candidates. The SBERT query is adjusted toward the average starred-candidate embedding and away from the average rejected-candidate embedding:
+| Method | Representation | Role in the analysis |
+| --- | --- | --- |
+| Bag of Words | Sparse token counts | Transparent lexical baseline |
+| TF-IDF | Weighted sparse token counts | Reduces the influence of common corpus terms |
+| Word2Vec | Dense word embeddings | Demonstrates local context learning |
+| GloVe | Dense word embeddings | Demonstrates global co-occurrence learning |
+| FastText | Word and character n-gram embeddings | Adds subword information |
+| BERT | Contextual token embeddings with mean pooling | Demonstrates contextual encoding |
+| SBERT | Pretrained sentence embeddings | Semantic-ranking baseline and feedback representation |
+
+The Word2Vec, GloVe, and FastText sections are educational local implementations. A corpus of 52 unique titles is too small to train reliable general-purpose word embeddings. Pretrained SBERT is better suited to the sentence-level comparison used in this experiment.
+
+## Similarity ranking
+
+For a query vector (q) and candidate vector (c), cosine similarity is calculated as:
 
 ```text
-q' = normalize(0.60q + 0.40mean(stars) - 0.15mean(rejects))
+cos(q, c) = (q dot c) / (||q|| ||c||)
 ```
 
-The candidates are then ranked again using the updated query. A small bonus keeps directly starred candidates visible while allowing similar, unstarred candidates to move upward too.
+Higher scores indicate that the two vectors point in more similar directions. These values are useful for ordering candidates within a method, but they are **not probabilities of candidate fitness** and should not be compared as equivalent confidence values across different models.
+
+## Recruiter-feedback prototype
+
+The notebook interprets a star as **"find more candidates similar to this profile"** rather than only increasing the selected row's score. It also supports optional rejection feedback.
+
+```text
+q' = normalize(
+       0.60 * original_query
+     + 0.40 * mean(starred_candidates)
+     - 0.15 * mean(rejected_candidates)
+)
+
+final_score = cosine(candidate, q') + 0.03 * is_starred
+```
+
+The notebook:
+
+- validates candidate IDs;
+- prevents the same candidate from being both starred and rejected;
+- recalculates every candidate's similarity after feedback;
+- reports initial rank, updated rank, and rank change;
+- demonstrates sequential feedback with candidates 72 and 76; and
+- keeps feedback separated by search query in an in-memory dictionary.
+
+The coefficients are prototype choices, not learned parameters. They require validation against recruiter judgments before operational use.
+
+## Recruiter system still required
+
+A usable recruitment tool would need to place the notebook logic behind an application layer. The following architecture is a proposed next stage and is **not included in this repository**:
+
+```mermaid
+flowchart LR
+    A[Recruiter enters role query] --> B[Candidate preprocessing]
+    B --> C[Embedding and search index]
+    C --> D[Ranking service]
+    D --> E[Ranked candidate review screen]
+    E -->|Star / reject| F[Feedback API]
+    F --> G[Feedback store by role and requisition]
+    G --> D
+    D --> H[Audit log and ranking metrics]
+```
+
+A production implementation should include:
+
+- a search and ranked-results interface;
+- an API for queries, stars, rejections, and re-ranking;
+- persistent feedback scoped to each role or requisition;
+- a versioned embedding index and reproducible model configuration;
+- an audit trail showing why ranks changed;
+- labeled recruiter judgments for Precision@K, Recall@K, MAP, and NDCG;
+- threshold and abstention testing across multiple job families;
+- bias monitoring, human review, and restrictions against using protected attributes as ranking signals; and
+- access controls, privacy safeguards, and retention rules for candidate information.
 
 ## Repository contents
 
-- `potential talent.ipynb` — data exploration, text representations, similarity ranking, model comparison, and recruiter-feedback demonstration.
-- `potential-talents.xlsx` — candidate data with ID, job title, location, connection count, and fit fields.
+- `potential talent.ipynb` — data audit, preprocessing, vectorization, ranking, model comparison, and feedback demonstration.
+- `potential-talents.xlsx` — anonymized candidate records used by the notebook.
 
-## Getting started
+## Reproducing the notebook
 
 ### 1. Clone the repository
 
@@ -67,26 +180,22 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-### 3. Install the dependencies
+### 3. Install dependencies
 
 ```powershell
 python -m pip install jupyter pandas numpy matplotlib scikit-learn openpyxl torch transformers sentence-transformers
 ```
 
-### 4. Run the notebook
+### 4. Open the notebook
 
 ```powershell
 jupyter lab "potential talent.ipynb"
 ```
 
-Run the cells from top to bottom. The pretrained BERT and SBERT models are downloaded the first time their sections run, so those cells require an internet connection.
+Run the cells from top to bottom. The BERT and SBERT sections download pretrained models on their first execution and therefore require an internet connection.
 
-## Key conclusion
+## Interpretation
 
-Bag of Words and TF-IDF provide understandable lexical baselines. The locally trained Word2Vec, GloVe, and FastText examples are useful for learning, but the dataset is too small for them to become strong production models. Pretrained SBERT is the most suitable semantic baseline in this notebook because it is designed for sentence-level similarity.
+The repository establishes a transparent lexical baseline, compares it with several embedding approaches, and demonstrates how recruiter feedback can alter a semantic ranking. It provides a defensible prototype of the ranking logic requested in the project brief.
 
-A production model should be evaluated with real recruiter relevance labels and ranking metrics such as Precision@K, Recall@K, MAP, or NDCG.
-
-## Status
-
-This repository is a learning project and experimental prototype, not a production hiring system.
+It does not establish that the rankings improve hiring outcomes, predict a calibrated fitness probability, generalize to other roles, or reduce human bias. Those claims require labeled relevance data, ranking metrics, cross-role testing, and a recruiter-facing system that records feedback consistently.
